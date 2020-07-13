@@ -4,10 +4,13 @@ extern "C" {
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <LiquidCrystal.h>
 
 #define SCAN_CHANNEL 6
 #define DEVICE_TIMEOUT 5 //device timeout in minutes
 #define DEVICE_TIMEOUT_SCAN 1
+
+#define SEND_DATA 0 //0 for lcd function and 1 for sending data to another board
 
 struct frameControl {
     unsigned protocol: 2;
@@ -73,6 +76,8 @@ static deviceList black_list;
 static unsigned long current_time;
 static unsigned long clear_time;
 const char MAC_FORMAT[] = "%02X:%02X:%02X:%02X:%02X:%02X\n";
+
+LiquidCrystal lcd(2,0,4,5,3,1);
 
 
 //checks if mac address is within the list and return the mac address if it isnt
@@ -165,7 +170,7 @@ void packetAnalyzer(uint8_t* buf, uint16_t len){
 }
 
 
-uint8_t sendDevices(uint8_t* deviceArray, deviceList* devices=&device_list){
+void formatDevices(uint8_t* deviceArray, deviceList* devices=&device_list){
 	uint8_t i, k, indexPoint;
 	for (i = 0; i < devices->len; ++i) {
 		indexPoint = i * 6;
@@ -173,11 +178,16 @@ uint8_t sendDevices(uint8_t* deviceArray, deviceList* devices=&device_list){
 			deviceArray[indexPoint + k] = devices->list[i].mac[k];
 		}
 	}
-	return (i * 6);
 }
 
+void printDevices(){
+    lcd.clear();
+    lcd.print("Active Devices:");
+    lcd.setCursor(0,1);
+    lcd.print(device_list.len);
+}
 
-void scan(){
+void sendDevices(){
 	if(Serial.available() > 0){
 		char incomingData = Serial.read();
 		if (incomingData == '1') {
@@ -186,10 +196,21 @@ void scan(){
 	}
 }
 
+void transmitData(uint8_t type=SEND_DATA){
+	if (type) {
+		sendDevices();
+	} else {
+		printDevices();
+		delay(5000);
+	}
+}
+
 void setup(){
 	Serial.begin(115200);
 	delay(100);
-	
+	//LCD INIT
+	lcd.begin(16, 2);
+    lcd.print("Scanner Screen");
 
 	//WIFI 
 	wifi_set_opmode(STATION_MODE);
@@ -208,5 +229,5 @@ void loop(){
 		clear_time = current_time;
 		expiredDevices();
 	}
-	scan();
+	transmitData();
 }
