@@ -6,7 +6,7 @@ extern "C" {
 #include <Wire.h>
 
 #define SCAN_CHANNEL 6
-#define DEVICE_TIMEOUT 3 //device timeout in minutes
+#define DEVICE_TIMEOUT 5 //device timeout in minutes
 #define DEVICE_TIMEOUT_SCAN 1
 
 struct frameControl {
@@ -76,6 +76,9 @@ const char MAC_FORMAT[] = "%02X:%02X:%02X:%02X:%02X:%02X\n";
 
 
 //checks if mac address is within the list and return the mac address if it isnt
+void addToBlacklist(uint8_t* mac){
+
+}
 
 void printMacAddresses(char* mac1, char* mac2, char* mac3){
 	Serial.printf("Receiver: ");
