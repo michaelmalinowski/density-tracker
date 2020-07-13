@@ -3,8 +3,11 @@ extern "C" {
 }
 
 #include <Arduino.h>
+#include <Wire.h>
 
 #define SCAN_CHANNEL 6
+#define DEVICE_TIMEOUT 3 //device timeout in minutes
+#define DEVICE_TIMEOUT_SCAN 1
 
 struct frameControl {
     unsigned protocol: 2;
@@ -56,7 +59,7 @@ struct snifferStream {
 
 struct device {
 	uint8_t mac[6];
-	uint8_t last_seen;
+	unsigned long last_seen;
 };
 
 struct deviceList {
@@ -65,8 +68,10 @@ struct deviceList {
 };
 
 static deviceList device_list;
+static deviceList black_list;
 
-
+static unsigned long current_time;
+static unsigned long clear_time;
 const char MAC_FORMAT[] = "%02X:%02X:%02X:%02X:%02X:%02X\n";
 
 
@@ -81,48 +86,65 @@ void printMacAddresses(char* mac1, char* mac2, char* mac3){
 	Serial.printf(MAC_FORMAT, mac3[0], mac3[1], mac3[2], mac3[3], mac3[4], mac3[5]);
 }
 
-void checkMacAddress(char* mac, deviceList* devices=&device_list){
-	Serial.printf(MAC_FORMAT, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+void checkMacAddress(uint8_t* mac, bool print=false, deviceList* devices=&device_list){
 	uint8_t i;
-	Serial.printf("Devices: %d\n", devices->len);
+	
 	for (i = 0; i < devices->len; ++i){
 		if (memcmp(mac, devices->list[i].mac, 6) == 0) {
-			Serial.printf("HERE");
-			//update device time
+			devices->list[i].last_seen = current_time;
 			return;
 		}
 	}
 	device new_device;
 	memcpy(new_device.mac, mac, 6);
+	new_device.last_seen = current_time;
 	devices->list[devices->len] = new_device;
 	devices->len += 1;
-	//add device to the list 
+	if (print) {
+		Serial.printf(MAC_FORMAT, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+	}
 	return;
+}
+
+uint8_t expiredDevices(deviceList* devices=&device_list){
+	//Serial.printf("Expired device check\n");
+	uint8_t i;
+	uint8_t shift = 0, expired = 0;
+	for(i = 0; i < devices->len; ++i){
+		if (shift > 0) {
+			devices->list[i - shift] = devices->list[i];
+		}
+		if (current_time - devices->list[i].last_seen > DEVICE_TIMEOUT * 60000) {
+			++expired;
+			++shift;
+		}
+	}
+	devices->len -= expired;
+	return expired;
 }
 
 void packetAnalyzer(uint8_t* buf, uint16_t len){
 	if (len == 12) {
 		return;
 	} else if (len == 128) {
-		Serial.printf("FULL 128\n");
-		char mac1[6];
-		char mac2[6];
-		char mac3[6];
+		uint8_t mac1[6];
+		uint8_t mac2[6];
+		uint8_t mac3[6];
 		snifferStream *data = (snifferStream*) buf;
 		frameControl *frame = (frameControl*) data->buf;
-		//Serial.printf("s: %d  t: %d \n", frame->type, frame->subtype);
+		//Probe request
 		if (frame->type == 0 && frame->subtype == 4){
 			uint8_t i;
 			for (i = 0; i < 6; ++i) {
 				mac1[i] = data->buf[i + 10];
 			}
 			checkMacAddress(mac1);
+		//probe response
 		}  else if (frame->type == 0 && frame->subtype == 5) {
 			uint8_t i;
 			for (i = 0; i < 6; ++i) {
 				mac1[i] = data->buf[i + 4];
 			}
-			checkMacAddress(mac1);
 		} else {
 			uint8_t i;
 			for (i = 0; i < 6; ++i) {
@@ -134,23 +156,54 @@ void packetAnalyzer(uint8_t* buf, uint16_t len){
 			for (i = 0; i < 6; ++i) {
 				mac3[i] = data->buf[i + 16];
 			}
-			//printMacAddresses(mac1, mac2, mac3);
-			
 		} 
 		
 	} 
 }
 
+
+uint8_t sendDevices(uint8_t* deviceArray, deviceList* devices=&device_list){
+	uint8_t i, k, indexPoint;
+	for (i = 0; i < devices->len; ++i) {
+		indexPoint = i * 6;
+		for (k = 0; k < 6; ++k) {
+			deviceArray[indexPoint + k] = devices->list[i].mac[k];
+		}
+	}
+	return (i * 6);
+}
+
+
+void scan(){
+	if(Serial.available() > 0){
+		char incomingData = Serial.read();
+		if (incomingData == '1') {
+			Serial.printf("%d", device_list.len);
+		}
+	}
+}
+
 void setup(){
 	Serial.begin(115200);
 	delay(100);
+	
+
+	//WIFI 
 	wifi_set_opmode(STATION_MODE);
 	wifi_set_channel(SCAN_CHANNEL);
 	wifi_set_promiscuous_rx_cb(packetAnalyzer);
 	delay(100);
 	wifi_promiscuous_enable(1);
+	current_time = millis();
+	clear_time = current_time;
 }
 
 void loop(){
 	yield();
+	current_time = millis();
+	if (current_time - clear_time > DEVICE_TIMEOUT_SCAN * 60000) {
+		clear_time = current_time;
+		expiredDevices();
+	}
+	scan();
 }
