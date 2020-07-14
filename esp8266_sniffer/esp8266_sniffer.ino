@@ -7,10 +7,11 @@ extern "C" {
 #include <LiquidCrystal.h>
 
 #define SCAN_CHANNEL 6
-#define DEVICE_TIMEOUT 3 //device timeout in minutes
-#define DEVICE_TIMEOUT_SCAN 1
+#define DEVICE_TIMEOUT 5 //device timeout in minutes
+#define DEVICE_TIMEOUT_SCAN 1 //time out checker in Minutes 
+#define BLACKLIST_MODE_COUNTDOWN 10 //Seconds
 
-#define SEND_DATA 0 //0 for lcd function and 1 for sending data to another board
+#define SEND_DATA 1 //0 for lcd function and 1 for sending data to another board
 
 struct frameControl {
     unsigned protocol: 2;
@@ -76,11 +77,32 @@ static deviceList black_list;
 static unsigned long current_time;
 static unsigned long clear_time;
 const char MAC_FORMAT[] = "%02X:%02X:%02X:%02X:%02X:%02X\n";
+bool mode = false;
 
-LiquidCrystal lcd(2,0,4,5,3,1);
+LiquidCrystal lcd(2,0,4,5,13,12);
 
 
 //checks if mac address is within the list and return the mac address if it isnt
+
+
+void blacklistMode(){
+	bool buttonPressed = false;
+	wifi_init();
+	while(mode){
+		lcd.setCursor(0,1);
+		buttonPressed = (digitalRead(15) == HIGH);
+		delay(100);
+		if (buttonPressed) {
+			mode = false;
+			lcd.clear();
+			lcd.print("Exited");
+			delay(500);
+			break;
+		}
+		lcd.print(black_list.len);
+		lcd.print(" ");
+	}
+}
 
 void printMacAddresses(char* mac1, char* mac2, char* mac3){
 	Serial.printf("Receiver: ");
@@ -91,20 +113,23 @@ void printMacAddresses(char* mac1, char* mac2, char* mac3){
 	Serial.printf(MAC_FORMAT, mac3[0], mac3[1], mac3[2], mac3[3], mac3[4], mac3[5]);
 }
 
-void checkMacAddress(uint8_t* mac, bool print=false, deviceList* devices=&device_list){
+void saveMacAddress(uint8_t* mac, deviceList* devices, bool print=false){
 	uint8_t i;
-	
-	for (i = 0; i < devices->len; ++i){
-		if (memcmp(mac, devices->list[i].mac, 6) == 0) {
-			devices->list[i].last_seen = current_time;
-			return;
+	if (!mode) {
+		for (i = 0; i < devices->len; ++i){
+			if (memcmp(mac, devices->list[i].mac, 6) == 0) {
+				devices->list[i].last_seen = current_time;
+				return;
+			}
 		}
 	}
-	device new_device;
-	memcpy(new_device.mac, mac, 6);
-	new_device.last_seen = current_time;
-	devices->list[devices->len] = new_device;
-	devices->len += 1;
+	if (blacklistedDevice(mac)) {
+		device new_device;
+		memcpy(new_device.mac, mac, 6);
+		new_device.last_seen = current_time;
+		devices->list[devices->len] = new_device;
+		devices->len += 1;
+	}
 	if (print) {
 		Serial.printf(MAC_FORMAT, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	}
@@ -128,6 +153,17 @@ uint8_t expiredDevices(deviceList* devices=&device_list){
 	return expired;
 }
 
+bool blacklistedDevice(uint8_t* mac){
+	uint8_t i;
+	for (i = 0; i < black_list.len; ++i){
+		if (memcmp(mac, black_list.list[i].mac, 6) == 0) {
+			black_list.list[i].last_seen = current_time;
+			return false;
+		}
+	}
+	return true;
+}
+
 void packetAnalyzer(uint8_t* buf, uint16_t len){
 	if (len == 12) {
 		return;
@@ -143,13 +179,10 @@ void packetAnalyzer(uint8_t* buf, uint16_t len){
 			for (i = 0; i < 6; ++i) {
 				mac1[i] = data->buf[i + 10];
 			}
-			checkMacAddress(mac1);
-		//probe response
-		}  else if (frame->type == 0 && frame->subtype == 5) {
-			uint8_t i;
-			for (i = 0; i < 6; ++i) {
-				mac1[i] = data->buf[i + 4];
+			if (mode == 0) {
+				saveMacAddress(mac1, &device_list);
 			}
+		//probe response
 		} else {
 			uint8_t i;
 			for (i = 0; i < 6; ++i) {
@@ -161,18 +194,21 @@ void packetAnalyzer(uint8_t* buf, uint16_t len){
 			for (i = 0; i < 6; ++i) {
 				mac3[i] = data->buf[i + 16];
 			}
+
 		} 
-		
+		if (mode) {
+			saveMacAddress(mac1, &black_list);
+		}
 	} 
 }
 
 
-void formatDevices(uint8_t* deviceArray, deviceList* devices=&device_list){
+void formatDevices(uint8_t* deviceArray){
 	uint8_t i, k, indexPoint;
-	for (i = 0; i < devices->len; ++i) {
+	for (i = 0; i < device_list.len; ++i) {
 		indexPoint = i * 6;
 		for (k = 0; k < 6; ++k) {
-			deviceArray[indexPoint + k] = devices->list[i].mac[k];
+			deviceArray[indexPoint + k] = device_list.list[i].mac[k];
 		}
 	}
 }
@@ -201,22 +237,46 @@ void transmitData(uint8_t type=SEND_DATA){
 		delay(5000);
 	}
 }
-
+void wifi_init(){
+	wifi_set_opmode(STATION_MODE);
+	wifi_set_channel(SCAN_CHANNEL);
+	wifi_set_promiscuous_rx_cb(packetAnalyzer);
+	delay(100);
+	wifi_promiscuous_enable(1);
+}
 void setup(){
 	Serial.begin(115200);
 	delay(100);
 	//LCD INIT
 	lcd.begin(16, 2);
     lcd.print("Scanner Screen");
-
+	delay(250);
+	lcd.clear();
 	//WIFI 
-	wifi_set_opmode(STATION_MODE);
-	wifi_set_channel(SCAN_CHANNEL);
-	wifi_set_promiscuous_rx_cb(packetAnalyzer);
-	delay(100);
-	wifi_promiscuous_enable(1);
+	lcd.print("BlackList Mode?");
 	current_time = millis();
+	bool buttonPressed = false;
+	while(BLACKLIST_MODE_COUNTDOWN > (current_time/1000)){
+		current_time = millis();
+		lcd.setCursor(0,1);
+		lcd.print((long)floor((BLACKLIST_MODE_COUNTDOWN - (current_time/1000))));
+		lcd.print(" ");
+		buttonPressed = digitalRead(15);
+		if (buttonPressed) {
+			lcd.clear();
+			lcd.print("BlackListed:");
+			mode = true;
+			break;
+		}
+		yield();
+	}
+
+	blacklistMode();
+	lcd.clear();
+
+	lcd.print("Scanner Started");
 	clear_time = current_time;
+
 }
 
 void loop(){
