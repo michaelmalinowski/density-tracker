@@ -53,4 +53,4 @@ At this point, data will either be sent to the lcd or a different device dependi
 | `SEND_DATA`                       | Selecting between data mode. 0 for sending data to lcd. 1 for sending data over Serial |0 or 1|`SEND_DATA=0`|
 
 ## Future Development
-A website is currently being developed to share gathered data amongst the community. Our main goal is to raise awareness of population density at certain locations. 
+A website is currently being developed to share gathered data amongst the community. Our main goal is to raise awareness of population density at peoples favourite locations. 
