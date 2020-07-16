@@ -244,6 +244,7 @@ void printDevices(uint8_t num){
     lcd.print("Active Devices:");
     lcd.setCursor(0,1);
     lcd.print(num);
+    delay(250);
 }
 
 //prints num to serial
