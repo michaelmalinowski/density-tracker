@@ -51,7 +51,7 @@ At this point, data will either be sent to the LCD or a different device dependi
 | `DEVICE_TIMEOUT`                  | The amount of minutes before a device is deemed inactive (Only if `WIFI_ON=1`) |> 0|`DEVICE_TIMEOUT=5`|
 | `DEVICE_TIMEOUT_SCAN`             | The amount of minutes before a scan is trigger to check for expired devices (Only if `WIFI_ON=1`)|> 0|`DEVICE_TIMEOUT_SCAN=1`|
 | `BURST_DURATION`                  | The amount of seconds before a burst scan ends |> 0|`BURST_DURATION=30`|
-| `BURST_AVERAGE`                   | The amount of bursts to average across |> 0|`BURST_DURATION=2`|
+| `BURST_AVERAGE`                   | The amount of bursts to average across |> 0|`BURST_AVERAGE=2`|
 | `SEND_DATA`                       | Selecting between data mode. 0 for sending data to lcd. 1 for sending data over UART |0 or 1|`SEND_DATA=0`|
 
 ## Future Development
